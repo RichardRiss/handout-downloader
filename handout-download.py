@@ -9,6 +9,8 @@ from queue import Queue
 from getpass import getpass
 from bs4 import BeautifulSoup
 from urllib.parse import unquote
+import PySimpleGUI as sg
+import sys
 
 HANDOUT_URL = 'https://stud.fh-wedel.de/handout'
 
@@ -63,7 +65,7 @@ def list_files(source, list_queue, file_queue, creds):
 
     for _ in range(num_list_threads):
         worker = Thread(target=list_worker, args=[
-                        list_queue, file_queue, creds])
+            list_queue, file_queue, creds])
         worker.setDaemon(True)
         worker.start()
 
@@ -71,7 +73,7 @@ def list_files(source, list_queue, file_queue, creds):
     return file_queue.qsize()
 
 
-def download_files(num_files, file_queue, source, target, max_size):
+def download_files(num_files, file_queue, source, target, max_size, creds):
     num_download_threads = 64
     logging.info('Downloading %d files to target directory "%s"',
                  num_files, target)
@@ -79,7 +81,7 @@ def download_files(num_files, file_queue, source, target, max_size):
 
     for _ in range(num_download_threads):
         worker = Thread(target=download_worker, args=[
-                        file_queue, source, target, max_size, creds, pbar])
+            file_queue, source, target, max_size, creds, pbar])
         worker.setDaemon(True)
         worker.start()
 
@@ -92,17 +94,45 @@ def run(source, target, max_size, creds):
     list_queue = Queue()
     file_queue = Queue()
     num_files = list_files(source, list_queue, file_queue, creds)
-    download_files(num_files, file_queue, source, target, max_size)
+    download_files(num_files, file_queue, source, target, max_size, creds)
+
+
+def gui():
+    try:
+        sg.theme('Reddit')
+        layout = []
+        layout.append([sg.Text('Input Link to Handout (f.e. /Iwanowski/Berechenbarkeit/) ')])
+        layout.append([sg.InputText(key='source')])
+        layout.append([sg.Text('Local Target folder')])
+        layout.append([sg.InputText(key='target'), sg.FolderBrowse()])
+        layout.append([sg.Text('User: '), sg.InputText('', key='user')])
+        layout.append([sg.Text('Pasword: '), sg.InputText('', key='password', password_char='*')])
+
+        layout.append([[sg.Ok("Download"), sg.Cancel()]])
+        window = sg.Window('Handout Downloader', layout, no_titlebar=False, text_justification='r', grab_anywhere=True,
+                           font='Any 12')
+
+        while True:
+            event, values = window.read()
+
+            if event == sg.WIN_CLOSED or event == 'Cancel':
+                window.close()
+                sys.exit('Program aborted manually')
+
+            elif event == 'Download':
+                usr = window['user'].get()
+                pw = window['password'].get()
+                run(window['source'].get(), window['target'].get(), 100, tuple([usr, pw]))
+
+
+
+    except:
+        logging.error(f'Main GUI produced an error.')
+        logging.error(f'{sys.exc_info()[1]}')
+        logging.error(f'Error on line {sys.exc_info()[-1].tb_lineno}')
 
 
 if __name__ == "__main__":
     logging.basicConfig(format='%(asctime)s: %(message)s',
                         datefmt='%H:%M:%S', level=logging.INFO)
-    parser = argparse.ArgumentParser()
-    parser.add_argument('source', help='handout directory to download')
-    parser.add_argument('target', help='local download path')
-    parser.add_argument('-m', '--max-size', type=int,
-                        default=128, help='file size limit in MB')
-    args = parser.parse_args()
-    creds = (input('Username: '), getpass())
-    run(args.source, args.target, args.max_size, creds)
+    gui()
